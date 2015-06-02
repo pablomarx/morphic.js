@@ -1163,10 +1163,36 @@ function fontHeight(height) {
 function newCanvas(extentPoint) {
     // answer a new empty instance of Canvas, don't display anywhere
     var canvas, ext;
+
     ext = extentPoint || {x: 0, y: 0};
     canvas = document.createElement('canvas');
-    canvas.width = ext.x;
-    canvas.height = ext.y;
+	canvas.updateScaleTransform = function() {
+		this.getContext('2d').scale(canvas.scale, canvas.scale);
+	};
+	
+	Object.defineProperty(canvas, 'naturalWidth', {
+	  get: function() { return this.width / this.scale; },
+	  set: function(newValue) { this.width = newValue * this.scale; this.updateScaleTransform(); },
+	  enumerable: true,
+	  configurable: true
+	});
+	Object.defineProperty(canvas, 'naturalHeight', {
+	  get: function() { return this.height / this.scale; },
+	  set: function(newValue) { this.height = newValue * this.scale; this.updateScaleTransform(); },
+	  enumerable: true,
+	  configurable: true
+	});
+	Object.defineProperty(canvas, 'scale', {
+	  get: function() { return this._scale; },
+	  set: function(newValue) { this._scale = newValue; this.updateScaleTransform(); },
+	  enumerable: true,
+	  configurable: true
+	});
+
+	canvas.scale = window.devicePixelRatio;
+	canvas.naturalWidth = ext.x;
+	canvas.naturalHeight = ext.y;
+	
     return canvas;
 }
 
@@ -2622,7 +2648,7 @@ Morph.prototype.drawCachedTexture = function () {
 */
 
 Morph.prototype.drawOn = function (aCanvas, aRect) {
-    var rectangle, area, delta, src, context, w, h, sl, st;
+    var rectangle, area, delta, src, context, w, h, sl, st, scale;
     if (!this.isVisible) {
         return null;
     }
@@ -2631,13 +2657,14 @@ Morph.prototype.drawOn = function (aCanvas, aRect) {
     if (area.extent().gt(new Point(0, 0))) {
         delta = this.position().neg();
         src = area.copy().translateBy(delta).round();
+        scale = this.image.scale;
         context = aCanvas.getContext('2d');
         context.globalAlpha = this.alpha;
 
         sl = src.left();
         st = src.top();
-        w = Math.min(src.width(), this.image.width - sl);
-        h = Math.min(src.height(), this.image.height - st);
+        w = Math.min(src.width(), this.image.naturalWidth - sl);
+        h = Math.min(src.height(), this.image.naturalHeight - st);
 
         if (w < 1 || h < 1) {
             return null;
@@ -2645,10 +2672,10 @@ Morph.prototype.drawOn = function (aCanvas, aRect) {
 
         context.drawImage(
             this.image,
-            src.left(),
-            src.top(),
-            w,
-            h,
+            src.left() * scale,
+            src.top() * scale,
+            w * scale,
+            h * scale,
             area.left(),
             area.top(),
             w,
@@ -2754,7 +2781,9 @@ Morph.prototype.fullImage = function () {
                 ctx.drawImage(
                     morph.image,
                     morph.bounds.origin.x - fb.origin.x,
-                    morph.bounds.origin.y - fb.origin.y
+                    morph.bounds.origin.y - fb.origin.y,
+                    morph.image.naturalWidth,
+                    morph.image.naturalHeight
                 );
             }
         }
@@ -2778,7 +2807,9 @@ Morph.prototype.shadowImage = function (off, color) {
     ctx.drawImage(
         img,
         -offset.x,
-        -offset.y
+        -offset.y,
+        img.naturalWidth,
+        img.naturalHeight
     );
     sha = newCanvas(fb);
     ctx = sha.getContext('2d');
@@ -2805,7 +2836,9 @@ Morph.prototype.shadowImageBlurred = function (off, color) {
     ctx.drawImage(
         img,
         blur - offset.x,
-        blur - offset.y
+        blur - offset.y,
+        img.naturalWidth,
+        img.naturalHeight
     );
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
@@ -2814,7 +2847,9 @@ Morph.prototype.shadowImageBlurred = function (off, color) {
     ctx.drawImage(
         img,
         blur - offset.x,
-        blur - offset.y
+        blur - offset.y,
+        img.naturalWidth,
+        img.naturalHeight
     );
     return sha;
 };
@@ -5362,7 +5397,9 @@ SpeechBubbleMorph.prototype.shadowImageBlurred = function (off, color) {
     ctx.drawImage(
         img,
         blur - offset.x,
-        blur - offset.y
+        blur - offset.y,
+        img.naturalWidth,
+        img.naturalHeight
     );
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
@@ -5371,7 +5408,9 @@ SpeechBubbleMorph.prototype.shadowImageBlurred = function (off, color) {
     ctx.drawImage(
         img,
         blur - offset.x,
-        blur - offset.y
+        blur - offset.y,
+        img.naturalWidth,
+        img.naturalHeight
     );
     return sha;
 };
@@ -7086,8 +7125,8 @@ StringMorph.prototype.drawNew = function () {
             fontHeight(this.fontSize) + Math.abs(shadowOffset.y)
         )
     );
-    this.image.width = width;
-    this.image.height = this.height();
+    this.image.naturalWidth = width;
+    this.image.naturalHeight = this.height();
 
     // prepare context for drawing text
     context.font = this.font();
@@ -7653,8 +7692,8 @@ TextMorph.prototype.drawNew = function () {
             new Point(this.maxWidth + shadowWidth, height)
         );
     }
-    this.image.width = this.width();
-    this.image.height = this.height();
+    this.image.naturalWidth = this.width();
+    this.image.naturalHeight = this.height();
 
     // prepare context for drawing text
     context = this.image.getContext('2d');
@@ -10095,6 +10134,7 @@ WorldMorph.prototype.fillPage = function () {
     var pos = getDocumentPositionOf(this.worldCanvas),
         clientHeight = window.innerHeight,
         clientWidth = window.innerWidth,
+        clientScale = window.devicePixelRatio ? window.devicePixelRatio : 1,
         myself = this;
 
 
@@ -10117,12 +10157,18 @@ WorldMorph.prototype.fillPage = function () {
         clientWidth = document.documentElement.clientWidth;
     }
     if (this.worldCanvas.width !== clientWidth) {
-        this.worldCanvas.width = clientWidth;
+        this.worldCanvas.width = clientWidth * clientScale;
+        this.worldCanvas.style.width = clientWidth+"px";
         this.setWidth(clientWidth);
     }
     if (this.worldCanvas.height !== clientHeight) {
-        this.worldCanvas.height = clientHeight;
+        this.worldCanvas.height = clientHeight * clientScale;
+        this.worldCanvas.style.height = clientHeight+"px";
         this.setHeight(clientHeight);
+    }
+    if (this.worldCanvas.scale !== clientScale) {
+        this.worldCanvas.scale = clientScale;
+        this.worldCanvas.getContext("2d").scale(clientScale, clientScale);
     }
     this.children.forEach(function (child) {
         if (child.reactToWorldResize) {
