@@ -1207,7 +1207,6 @@ function newCanvas(extentPoint) {
             }
             args.push(args[0].width);
             args.push(args[0].height);
-            console.log(args);
         }
         else {
             args = arguments;
