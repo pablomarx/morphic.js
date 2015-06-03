@@ -1157,14 +1157,65 @@ function degrees(radians) {
 
 function fontHeight(height) {
     var minHeight = Math.max(height, MorphicPreferences.minimumFontHeight);
-    return minHeight * 1.2; // assuming 1/5 font size for ascenders
+    var result = Math.ceil(minHeight * 1.2); // assuming 1/5 font size for ascenders
+    return result;
 }
 
 function newCanvas(extentPoint) {
     // answer a new empty instance of Canvas, don't display anywhere
-    var canvas, ext;
+    var canvas, ext, ctxt;
     ext = extentPoint || {x: 0, y: 0};
     canvas = document.createElement('canvas');
+
+    canvas.updateScaleTransform = function() {
+        this.getContext('2d').scale(canvas.scale, canvas.scale);
+    };
+    
+    Object.defineProperty(canvas, 'width', {
+      get: function() { return parseFloat(this.getAttribute("width") ? this.getAttribute("width") : "0") / this.scale; },
+      set: function(newValue) { this.setAttribute("width", Math.round(newValue) * this.scale); this.updateScaleTransform(); },
+      enumerable: true,
+      configurable: true
+    });
+    Object.defineProperty(canvas, 'height', {
+      get: function() { return parseFloat(this.getAttribute("height") ? this.getAttribute("height") : "0") / this.scale; },
+      set: function(newValue) { this.setAttribute("height", Math.round(newValue) * this.scale); this.updateScaleTransform(); },
+      enumerable: true,
+      configurable: true
+    });
+    Object.defineProperty(canvas, 'scale', {
+      get: function() { return this._scale; },
+      set: function(newValue) { this._scale = newValue; this.height = this.height; this.width = this.width; this.updateScaleTransform(); },
+      enumerable: true,
+      configurable: true
+    });
+
+    ctxt = canvas.getContext("2d");
+    ctxt._origDrawImage = ctxt.drawImage;
+    ctxt.drawImage = function() {
+        var args = null;
+        if (arguments.length < 5) {
+            args = [];
+            args.push(arguments[0]);
+            if (arguments.length >= 3) {
+                args.push(arguments[1]);
+                args.push(arguments[2]);
+            }
+            else {
+                args.push(0);
+                args.push(0);
+            }
+            args.push(args[0].width);
+            args.push(args[0].height);
+            console.log(args);
+        }
+        else {
+            args = arguments;
+        }
+        ctxt._origDrawImage.apply(ctxt, args);
+    };
+
+    canvas.scale = window.devicePixelRatio;
     canvas.width = ext.x;
     canvas.height = ext.y;
     return canvas;
@@ -2645,10 +2696,10 @@ Morph.prototype.drawOn = function (aCanvas, aRect) {
 
         context.drawImage(
             this.image,
-            src.left(),
-            src.top(),
-            w,
-            h,
+            src.left() * this.image.scale,
+            src.top() * this.image.scale,
+            w * this.image.scale,
+            h * this.image.scale,
             area.left(),
             area.top(),
             w,
@@ -10095,6 +10146,7 @@ WorldMorph.prototype.fillPage = function () {
     var pos = getDocumentPositionOf(this.worldCanvas),
         clientHeight = window.innerHeight,
         clientWidth = window.innerWidth,
+        clientScale = window.devicePixelRatio ? window.devicePixelRatio : 1,
         myself = this;
 
 
@@ -10117,12 +10169,18 @@ WorldMorph.prototype.fillPage = function () {
         clientWidth = document.documentElement.clientWidth;
     }
     if (this.worldCanvas.width !== clientWidth) {
-        this.worldCanvas.width = clientWidth;
+        this.worldCanvas.width = clientWidth * clientScale;
+        this.worldCanvas.style.width = clientWidth+"px";
         this.setWidth(clientWidth);
     }
     if (this.worldCanvas.height !== clientHeight) {
-        this.worldCanvas.height = clientHeight;
+        this.worldCanvas.height = clientHeight * clientScale;
+        this.worldCanvas.style.height = clientHeight+"px";
         this.setHeight(clientHeight);
+    }
+    if (this.worldCanvas.scale !== clientScale) {
+        this.worldCanvas.scale = clientScale;
+        this.worldCanvas.getContext("2d").scale(clientScale, clientScale);
     }
     this.children.forEach(function (child) {
         if (child.reactToWorldResize) {
